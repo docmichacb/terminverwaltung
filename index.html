@@ -2715,6 +2715,7 @@
     </div>
     <div class="form-actions">
       <button class="btn" onclick="aufgabeZuTermin(editingTerminId)" title="Eine Aufgabe anlegen, die an diesem Termin hängt">+ Aufgabe zum Termin</button>
+      <button class="btn btn-copy" onclick="copyTermin(editingTerminId)" title="Diesen Termin duplizieren">Kopieren</button>
       <button class="btn" onclick="closeModalTermin()">Abbrechen</button>
       <button class="btn btn-primary" onclick="updateTermin()">Änderungen speichern</button>
     </div>
@@ -4007,6 +4008,7 @@ function copyTermin(id) {
   appointments.push(copy);
   persist();
   renderTerminPreview();
+  kalRefreshIfActive();
   const active = document.querySelector('.pane.active').id;
   if (active === 'pane-liste-datum') renderListeDatum();
   if (active === 'pane-liste-projekt') renderListeProjekt();
@@ -6393,7 +6395,12 @@ function verfFenster(e, dateStr) {
 // Belegt der Eintrag den Tag vor 16 Uhr, nach 16 Uhr, oder beides?
 function verfBelegung(e, dateStr) {
   const f = verfFenster(e, dateStr);
-  if (!f) return { vor: true, nach: false };              // ganztägig
+  if (!f) {
+    // Ganztägig: Privattermine (z. B. Urlaub, Krankheit) sperren den ganzen Tag
+    // inkl. Abend – im Kalender ist der Tag komplett belegt. Ganztägige Termine
+    // sperren weiterhin nur den Tag; der Abend bleibt dort verfügbar.
+    return (e._type === 'privat') ? { vor: true, nach: true } : { vor: true, nach: false };
+  }
   if (f.von === f.bis) {                                  // Zeitpunkt ohne Ende
     return { vor: f.von < KAL_VERF_GRENZE, nach: f.von >= KAL_VERF_GRENZE };
   }
