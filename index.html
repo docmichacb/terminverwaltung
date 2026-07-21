@@ -6359,6 +6359,10 @@ function kalWeekCell(montag) {
 //   abends verfügbar  — nur tagsüber belegt (dazu zählen ganztägige Einträge)
 //   nicht verfügbar   — tagsüber und abends belegt, oder Sonntag
 //
+// Sonnabendabende gelten generell als privat: der Abend ist am Samstag
+// immer belegt. Ein Samstag ohne Eintrag ist daher „tags verfügbar", ein
+// Samstag mit Tagesbelegung „nicht verfügbar".
+//
 // Ganztägige Einträge gelten als Tagesbelegung. Das ist eine Setzung: sie
 // sagen nichts über den Abend, und der Abend bleibt daher als verfügbar
 // ausgewiesen.
@@ -6418,6 +6422,8 @@ function verfZaehlt(e) {
 function verfUrteil(tag, dateStr, evts) {
   if (tag.getDay() === 0) return { schluessel: 'nicht', text: 'nicht verfügbar' };
   let vor = false, nach = false;
+  // Sonnabendabend ist privat und damit nie verfügbar.
+  if (tag.getDay() === 6) nach = true;
   (evts || []).filter(verfZaehlt).forEach(e => {
     const b = verfBelegung(e, dateStr);
     if (b.vor)  vor = true;
