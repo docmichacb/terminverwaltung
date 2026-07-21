@@ -239,6 +239,18 @@
     .bc4 { background:#3C3489;color:#CECBF6;border-color:#534AB7; }
     .bc5 { background:#27500A;color:#C0DD97;border-color:#3B6D11; }
   }
+  /* Verfügbarkeit: manuelle Anpassung pro Tag */
+  .verf-zelle { cursor:pointer; }
+  .verf-zelle:hover .kal-verf { outline:1px dashed var(--border-strong); outline-offset:2px; }
+  .verf-manuell-marke { font-size:0.7rem; color:var(--text-hint); margin-right:3px; }
+  .verf-pop { position:fixed; z-index:99999; background:var(--surface); border:0.5px solid var(--border-strong);
+    border-radius:8px; box-shadow:0 6px 24px rgba(0,0,0,0.18); padding:5px; display:flex;
+    flex-direction:column; gap:3px; min-width:180px; }
+  .verf-pop-opt { background:transparent; border:none; text-align:left; padding:4px 6px; border-radius:5px;
+    cursor:pointer; font-family:inherit; font-size:0.78rem; color:var(--text); }
+  .verf-pop-opt:hover { background:var(--bg); }
+  .verf-pop-opt.aktiv { background:var(--bg); font-weight:600; }
+  .verf-pop-auto { color:var(--text-secondary); font-size:0.75rem; }
   @media print {
     body { background: #fff !important; color: #000 !important; font-size: 11pt; }
     .app-header, .tabs, .section-header .btn, .appt-actions, .proj-actions,
@@ -270,6 +282,7 @@
     #pane-verf-tabelle.print-active .section-header { display:none !important; }
     #pane-verf-tabelle.print-active .verf-stand { display:block !important; }
     .verf-tab .kal-verf { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .verf-manuell-marke, .verf-pop { display:none !important; }
     .verf-monat { page-break-after:avoid; }
     .verf-tab tr { page-break-inside:avoid; }
 
@@ -1923,6 +1936,7 @@
           <button class="ftab active" id="vf-all"    onclick="setVerfZukunft(false)">Alle</button>
           <button class="ftab"        id="vf-future" onclick="setVerfZukunft(true)" title="Nur den heutigen und künftige Tage anzeigen">Zukünftige</button>
         </div>
+        <button class="btn" id="verf-reset-btn" onclick="verfAlleZuruecksetzen()" title="Alle manuell festgelegten Tage wieder auf automatisch stellen" style="display:none;">↺ Anpassungen zurücksetzen</button>
         <button class="btn" onclick="printVerfTabelle()" title="Die Verfügbarkeitstabelle drucken">⎙ Drucken</button>
       </div>
     </div>
@@ -1930,8 +1944,8 @@
     <div class="verf-stand" id="verf-tab-stand"></div>
     <div class="kal-legende-verf-zeilen verf-tab-legende">
       <div class="kal-legende-verf-zeile">
-        <span class="kal-verf kal-verf-frei">frei</span>
-        <span class="kal-legende-verf-text">verfügbar</span>
+        <span class="kal-verf kal-verf-frei">verfügbar</span>
+        <span class="kal-legende-verf-text">ganztägig verfügbar</span>
       </div>
       <div class="kal-legende-verf-zeile">
         <span class="kal-verf kal-verf-tags">tags verfügbar</span>
@@ -2342,8 +2356,8 @@
     <div id="kal-legende-verf" style="display:none;margin-top:1rem;">
       <div class="kal-legende-verf-zeilen">
         <div class="kal-legende-verf-zeile">
-          <span class="kal-verf kal-verf-frei">frei</span>
-          <span class="kal-legende-verf-text">verfügbar</span>
+          <span class="kal-verf kal-verf-frei">verfügbar</span>
+          <span class="kal-legende-verf-text">ganztägig verfügbar</span>
         </div>
         <div class="kal-legende-verf-zeile">
           <span class="kal-verf kal-verf-tags">tags verfügbar</span>
@@ -2869,6 +2883,7 @@ const SK_KV  = 'terminverwaltung_kal_ansicht';
 const SK_KA  = 'terminverwaltung_kal_aufgaben';
 const SK_WZ  = 'terminverwaltung_wegzeiten';
 const SK_UEB = 'terminverwaltung_uebergaenge';
+const SK_VO  = 'terminverwaltung_verf_overrides'; // { 'YYYY-MM-DD': 'frei'|'tags'|'abends'|'nicht' }
 const MAX_VERSIONS = 10;
 const BADGE = ['bc0','bc1','bc2','bc3','bc4','bc5'];
 
@@ -2886,6 +2901,7 @@ let aufgaben = [];
 let privat = [];
 let wegzeiten = { standardMin: 45, paare: [] };
 let uebergaenge = [];
+let verfOverrides = {};   // manuell festgelegte Verfügbarkeiten
 let filterDatum = 'all';
 let filterProjekt = 'all';
 let filterProjektHeute = false;
@@ -3056,6 +3072,7 @@ function load() {
   aufgSubsSichern();
   try { privat = JSON.parse(localStorage.getItem(SK_PRV) || '[]'); } catch(e) { privat = []; }
   try { uebergaenge = JSON.parse(localStorage.getItem(SK_UEB) || '[]'); } catch(e) { uebergaenge = []; }
+  try { verfOverrides = JSON.parse(localStorage.getItem(SK_VO) || '{}'); } catch(e) { verfOverrides = {}; }
   try {
     const wz = JSON.parse(localStorage.getItem(SK_WZ) || 'null');
     wegzeiten = (wz && typeof wz === 'object')
@@ -3080,6 +3097,7 @@ function persist() {
   localStorage.setItem(SK_PRV, JSON.stringify(privat));
   localStorage.setItem(SK_WZ, JSON.stringify(wegzeiten));
   localStorage.setItem(SK_UEB, JSON.stringify(uebergaenge));
+  localStorage.setItem(SK_VO, JSON.stringify(verfOverrides));
   localStorage.setItem(SK_PDF, JSON.stringify(spPdfs));
   localStorage.setItem(SK_PROJ_PDF, JSON.stringify(projektPdfs));
   localStorage.setItem(SK_PROJ_STUNDENPLAN, JSON.stringify(projektStundenplaene));
@@ -4837,7 +4855,7 @@ function icsUebernehmen() {
 
 // EXPORT / IMPORT
 function exportData() {
-  const data = { version:3, exportedAt:new Date().toISOString(), customers, hotels, stoffplaene, projects, appointments, aufgaben, privat, wegzeiten, uebergaenge };
+  const data = { version:3, exportedAt:new Date().toISOString(), customers, hotels, stoffplaene, projects, appointments, aufgaben, privat, wegzeiten, uebergaenge, verfOverrides };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -4869,6 +4887,7 @@ function importData(e) {
         ? { standardMin: Number(data.wegzeiten.standardMin) || 45, paare: Array.isArray(data.wegzeiten.paare) ? data.wegzeiten.paare : [] }
         : { standardMin: 45, paare: [] };
       uebergaenge = Array.isArray(data.uebergaenge) ? data.uebergaenge : [];
+      verfOverrides = (data.verfOverrides && typeof data.verfOverrides === 'object') ? data.verfOverrides : {};
       persist();
       init();
       toast('Daten importiert: '+projects.length+' Aufträge, '+appointments.length+' Termine');
@@ -6354,7 +6373,7 @@ function kalWeekCell(montag) {
 // Übergänge sind Begleiterscheinungen eines Termins, keine eigene Belegung.
 //
 // Die Grenze liegt bei 16 Uhr. Ein Tag heißt
-//   frei              — nichts eingetragen
+//   verfügbar         — nichts eingetragen
 //   tags verfügbar    — nur abends belegt
 //   abends verfügbar  — nur tagsüber belegt (dazu zählen ganztägige Einträge)
 //   nicht verfügbar   — tagsüber und abends belegt, oder Sonntag
@@ -6368,6 +6387,9 @@ function kalWeekCell(montag) {
 // ausgewiesen.
 
 const KAL_VERF_GRENZE = 16 * 60;   // 16:00 in Minuten
+
+// Beschriftung der vier Stufen – auch für die manuelle Festlegung.
+const VERF_TEXTE = { frei:'verfügbar', tags:'tags verfügbar', abends:'abends verfügbar', nicht:'nicht verfügbar' };
 
 // Zeitfenster eines Eintrags an einem bestimmten Tag, in Minuten seit Mitternacht.
 // null bedeutet: ganztägig, also ohne auswertbare Uhrzeit.
@@ -6420,6 +6442,9 @@ function verfZaehlt(e) {
 
 // Urteil für einen Tag. `tag` ist ein Date, `evts` die Einträge dieses Tages.
 function verfUrteil(tag, dateStr, evts) {
+  // Eine manuelle Festlegung hat Vorrang vor jeder Automatik – auch vor der Sonntagsregel.
+  const ov = verfOverrides[dateStr];
+  if (ov && VERF_TEXTE[ov]) return { schluessel: ov, text: VERF_TEXTE[ov], manuell: true };
   if (tag.getDay() === 0) return { schluessel: 'nicht', text: 'nicht verfügbar' };
   let vor = false, nach = false;
   // Sonnabendabend ist privat und damit nie verfügbar.
@@ -6432,7 +6457,7 @@ function verfUrteil(tag, dateStr, evts) {
   if (vor && nach) return { schluessel: 'nicht',  text: 'nicht verfügbar' };
   if (vor)         return { schluessel: 'abends', text: 'abends verfügbar' };
   if (nach)        return { schluessel: 'tags',   text: 'tags verfügbar' };
-  return { schluessel: 'frei', text: 'frei' };
+  return { schluessel: 'frei', text: 'verfügbar' };
 }
 
 // ── TABELLARISCHE VERFÜGBARKEIT (Bereich Ausgabe) ────────────────────────────
@@ -6488,6 +6513,12 @@ function renderVerfTabelle() {
   mmRefreshBtn('verf');
   const stand = document.getElementById('verf-tab-stand');
   if (stand) stand.innerHTML = 'Stand der verfügbaren Termine: <strong>' + jetztDatumZeit() + '</strong>';
+  const rb = document.getElementById('verf-reset-btn');
+  if (rb) {
+    const n = Object.keys(verfOverrides).length;
+    rb.style.display = n ? 'inline-flex' : 'none';
+    rb.textContent = '↺ Anpassungen zurücksetzen (' + n + ')';
+  }
 
   const el = document.getElementById('verf-tabelle-content');
   if (!el) return;
@@ -6510,12 +6541,15 @@ function renderVerfTabelle() {
       if (verfNurZukunft && ds < heute) continue;   // Vergangenes ausblenden
       const tag = new Date(jahr, monat-1, d);
       const u = verfUrteil(tag, ds, byDate[ds] || []);
+      const manuell = Object.prototype.hasOwnProperty.call(verfOverrides, ds);
       const wochenende = (tag.getDay() === 0 || tag.getDay() === 6) ? ' verf-we' : '';
       const heuteCls = (ds === heute) ? ' verf-heute' : '';
       zeilen += '<tr class="' + (wochenende + heuteCls).trim() + '">'
            +  '<td class="verf-dow">' + VERF_DOW[tag.getDay()] + '</td>'
            +  '<td class="verf-datum">' + String(d).padStart(2,'0') + '.' + String(monat).padStart(2,'0') + '.' + jahr + '</td>'
-           +  '<td><span class="kal-verf kal-verf-' + u.schluessel + '">' + u.text + '</span></td>'
+           +  '<td class="verf-zelle" onclick="verfPopOeffnen(event,\'' + ds + '\')" title="Klicken, um die Verfügbarkeit für diesen Tag festzulegen">'
+           +    (manuell ? '<span class="verf-manuell-marke" title="manuell festgelegt">✎</span>' : '')
+           +    '<span class="kal-verf kal-verf-' + u.schluessel + '">' + u.text + '</span></td>'
            +  '</tr>';
     }
     // Ein Monat, der ganz in der Vergangenheit liegt, entfällt samt Überschrift.
@@ -6535,12 +6569,63 @@ function renderVerfTabelle() {
 // Druck: die Tabelle allein, im Hochformat. Wie bei den Listen genügt das
 // print-active-Muster; die @media-print-Regeln blenden die Bedienelemente aus.
 function printVerfTabelle() {
+  verfPopSchliessen();
   renderVerfTabelle();
   document.getElementById('ph-verf-date').textContent =
     new Date().toLocaleDateString('de-DE', { day:'2-digit', month:'long', year:'numeric' });
   document.querySelectorAll('.pane').forEach(p => p.classList.remove('print-active'));
   document.getElementById('pane-verf-tabelle').classList.add('print-active');
   window.print();
+}
+
+// ── Verfügbarkeit von Hand festlegen ─────────────────────────────────────────
+// Ein Klick auf die Verfügbarkeits-Zelle öffnet die Auswahl der vier Stufen.
+// „automatisch" löscht die Festlegung wieder; alle nicht angefassten Tage
+// folgen weiterhin der Automatik.
+function verfPopSchliessen() { const p = document.getElementById('verf-pop'); if (p) p.remove(); }
+
+function verfPopOeffnen(ev, ds) {
+  ev.stopPropagation();
+  const schonOffen = document.getElementById('verf-pop');
+  const gleich = schonOffen && schonOffen.dataset.ds === ds;
+  verfPopSchliessen();
+  if (gleich) return;                       // zweiter Klick schließt wieder
+  const pop = document.createElement('div');
+  pop.className = 'verf-pop';
+  pop.id = 'verf-pop';
+  pop.dataset.ds = ds;
+  let h = '';
+  ['frei','tags','abends','nicht'].forEach(function(k){
+    h += '<button type="button" class="verf-pop-opt' + (verfOverrides[ds] === k ? ' aktiv' : '') + '"'
+       + ' onclick="verfSetzen(\'' + ds + '\',\'' + k + '\')">'
+       + '<span class="kal-verf kal-verf-' + k + '">' + VERF_TEXTE[k] + '</span></button>';
+  });
+  h += '<button type="button" class="verf-pop-opt verf-pop-auto" onclick="verfSetzen(\'' + ds + '\',\'\')">— automatisch —</button>';
+  pop.innerHTML = h;
+  document.body.appendChild(pop);
+  const r = ev.currentTarget.getBoundingClientRect();
+  const b = pop.getBoundingClientRect();
+  pop.style.left = Math.max(6, Math.min(r.left, window.innerWidth - b.width - 6)) + 'px';
+  pop.style.top  = ((r.bottom + b.height > window.innerHeight) ? Math.max(6, r.top - b.height - 4) : r.bottom + 4) + 'px';
+}
+
+function verfSetzen(ds, schluessel) {
+  if (schluessel) verfOverrides[ds] = schluessel; else delete verfOverrides[ds];
+  persist();
+  verfPopSchliessen();
+  renderVerfTabelle();
+  kalRefreshIfActive();
+}
+
+function verfAlleZuruecksetzen() {
+  const n = Object.keys(verfOverrides).length;
+  if (!n) return;
+  if (!confirm(n + ' manuelle Festlegung' + (n !== 1 ? 'en' : '') + ' zurücksetzen?')) return;
+  verfOverrides = {};
+  persist();
+  renderVerfTabelle();
+  kalRefreshIfActive();
+  toast('Alle Festlegungen zurückgesetzt');
 }
 
 function kalCell(d, dateStr, otherMonth, isWeekend, isToday, evts) {
@@ -10936,7 +11021,11 @@ document.addEventListener('click', function(e){
   closeTabMenus();
 });
 document.addEventListener('keydown', function(e){
-  if (e.key === 'Escape') closeTabMenus();
+  if (e.key === 'Escape') { closeTabMenus(); verfPopSchliessen(); }
+});
+document.addEventListener('click', function(e){
+  if (e.target.closest('.verf-pop') || e.target.closest('.verf-zelle')) return;
+  verfPopSchliessen();
 });
 init();
 </script>
@@ -10960,7 +11049,7 @@ init();
   var auth = firebase.auth();
   var db   = firebase.database();
 
-  var SYNC_KEYS = [SK_K,SK_SP,SK_H,SK_HO,SK_HH,SK_P,SK_T,SK_A,SK_PRV,SK_WZ,SK_UEB,SK_PDF,SK_PROJ_PDF,SK_PROJ_STUNDENPLAN];
+  var SYNC_KEYS = [SK_K,SK_SP,SK_H,SK_HO,SK_HH,SK_P,SK_T,SK_A,SK_PRV,SK_WZ,SK_UEB,SK_VO,SK_PDF,SK_PROJ_PDF,SK_PROJ_STUNDENPLAN];
   var LTS_KEY = 'terminverwaltung_local_ts';
 
   var currentUser = null, stateRef = null, suspendPush = false, pushTimer = null, lastKnownRemoteTs = 0;
