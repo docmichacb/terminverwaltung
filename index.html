@@ -3084,24 +3084,75 @@ function load() {
   try { projektStundenplaene = JSON.parse(localStorage.getItem(SK_PROJ_STUNDENPLAN) || '{}'); } catch(e) { projektStundenplaene = {}; }
 }
 
+// ── SPEICHERN (v165): Versionen dürfen das Speichern nie mehr blockieren ──
+// Der Browser-Speicher (localStorage) fasst nur rund 5 Mio. Zeichen und wird
+// mit allen lokal geöffneten HTML-Dateien geteilt. Die eigentlichen Daten haben
+// Vorrang; die Versionshistorie bekommt ein festes Budget und weicht, wenn es eng wird.
+const VERSION_BUDGET = 1500000;   // max. Zeichen für die Versionshistorie
+function istSpeicherVoll(e) {
+  return !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+}
+// Älteste Versionen entfernen; gibt true zurück, wenn dabei Platz frei wurde.
+function versionenKuerzen(anzahlBehalten) {
+  let versions = [];
+  try { versions = JSON.parse(localStorage.getItem(SK_V) || '[]'); } catch(e) { versions = []; }
+  if (!versions.length) return false;
+  const rest = versions.slice(0, Math.max(0, anzahlBehalten));
+  try {
+    if (rest.length) localStorage.setItem(SK_V, JSON.stringify(rest));
+    else localStorage.removeItem(SK_V);
+  } catch(e) { try { localStorage.removeItem(SK_V); } catch(e2) {} }
+  return rest.length < versions.length;
+}
+// Ein Schlüssel wird geschrieben; ist der Speicher voll, weichen erst die Versionen.
+function speichereSicher(key, value) {
+  try { localStorage.setItem(key, value); return true; }
+  catch(e) {
+    if (!istSpeicherVoll(e)) throw e;
+    let versions = [];
+    try { versions = JSON.parse(localStorage.getItem(SK_V) || '[]'); } catch(_) {}
+    for (let n = versions.length - 1; n >= 0; n--) {
+      if (!versionenKuerzen(n)) break;
+      try { localStorage.setItem(key, value); return true; }
+      catch(e2) { if (!istSpeicherVoll(e2)) throw e2; }
+    }
+    return false;
+  }
+}
+let _speicherWarnungAktiv = false;
+function speicherWarnung(an) {
+  let el = document.getElementById('tv-speicher-warnung');
+  if (!an) { if (el) el.style.display = 'none'; _speicherWarnungAktiv = false; return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'tv-speicher-warnung';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:100001;background:#C0392B;color:#fff;'
+      + 'padding:10px 16px;font-size:0.85rem;font-family:inherit;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.25);';
+    el.innerHTML = '⚠ <strong>Speicher voll – Änderungen werden NICHT gespeichert.</strong> '
+      + 'Bitte sofort „↓ Export“ bzw. Auftrag „📦 Sichern“ ausführen und PDFs oder alte Aufträge archivieren.';
+    document.body.appendChild(el);
+  }
+  el.style.display = 'block';
+  if (!_speicherWarnungAktiv) console.error('Terminverwaltung: Browser-Speicher voll – Daten nicht gespeichert.');
+  _speicherWarnungAktiv = true;
+}
+
 function persist() {
   konfliktCacheLeeren();
-  localStorage.setItem(SK_K, JSON.stringify(customers));
-  localStorage.setItem(SK_SP, JSON.stringify(stoffplaene));
-  localStorage.setItem(SK_H, JSON.stringify(hotels));
-  localStorage.setItem(SK_HO, JSON.stringify(hotelOrte));
-  localStorage.setItem(SK_HH, JSON.stringify(hotelNamen));
-  localStorage.setItem(SK_P, JSON.stringify(projects));
-  localStorage.setItem(SK_T, JSON.stringify(appointments));
-  localStorage.setItem(SK_A, JSON.stringify(aufgaben));
-  localStorage.setItem(SK_PRV, JSON.stringify(privat));
-  localStorage.setItem(SK_WZ, JSON.stringify(wegzeiten));
-  localStorage.setItem(SK_UEB, JSON.stringify(uebergaenge));
-  localStorage.setItem(SK_VO, JSON.stringify(verfOverrides));
-  localStorage.setItem(SK_PDF, JSON.stringify(spPdfs));
-  localStorage.setItem(SK_PROJ_PDF, JSON.stringify(projektPdfs));
-  localStorage.setItem(SK_PROJ_STUNDENPLAN, JSON.stringify(projektStundenplaene));
+  const eintraege = [
+    [SK_K, customers], [SK_SP, stoffplaene], [SK_H, hotels], [SK_HO, hotelOrte], [SK_HH, hotelNamen],
+    [SK_P, projects], [SK_T, appointments], [SK_A, aufgaben], [SK_PRV, privat], [SK_WZ, wegzeiten],
+    [SK_UEB, uebergaenge], [SK_VO, verfOverrides], [SK_PDF, spPdfs], [SK_PROJ_PDF, projektPdfs],
+    [SK_PROJ_STUNDENPLAN, projektStundenplaene]
+  ];
+  let ok = true;
+  for (const [k, v] of eintraege) {
+    if (!speichereSicher(k, JSON.stringify(v))) ok = false;
+  }
+  if (!ok) { speicherWarnung(true); return false; }
+  speicherWarnung(false);
   saveVersion();
+  return true;
 }
 
 function saveVersion() {
@@ -3122,7 +3173,22 @@ function saveVersion() {
   };
   versions.unshift(snap);
   if (versions.length > MAX_VERSIONS) versions = versions.slice(0, MAX_VERSIONS);
-  localStorage.setItem(SK_V, JSON.stringify(versions));
+  // Budget: älteste Versionen fallen weg, bis die Historie hineinpasst (mind. 1 Version).
+  let json = JSON.stringify(versions);
+  while (versions.length > 1 && json.length > VERSION_BUDGET) {
+    versions.pop();
+    json = JSON.stringify(versions);
+  }
+  // Passt selbst das nicht in den Restspeicher, weitere kürzen; notfalls ohne Historie.
+  while (true) {
+    try { localStorage.setItem(SK_V, json); break; }
+    catch(e) {
+      if (!istSpeicherVoll(e)) throw e;
+      if (versions.length <= 1) { try { localStorage.removeItem(SK_V); } catch(_) {} break; }
+      versions.pop();
+      json = JSON.stringify(versions);
+    }
+  }
   // Re-render versions pane if it's open
   if (document.querySelector('.pane.active')?.id === 'pane-versionen') renderVersionen();
 }
@@ -5106,11 +5172,17 @@ function renderVersionen() {
   try { versions = JSON.parse(localStorage.getItem(SK_V) || '[]'); } catch(e) {}
   const el = document.getElementById('versionen-list');
   document.getElementById('v-count').textContent = versions.length;
+  let _gesamt = 0;
+  try { for (let i = 0; i < localStorage.length; i++) _gesamt += (localStorage.getItem(localStorage.key(i)) || '').length; } catch(e) {}
+  const _vLen = (localStorage.getItem(SK_V) || '').length;
+  const _mio = n => (n / 1048576).toFixed(2).replace('.', ',');
+  const _info = '<div class="version-meta" style="margin-bottom:10px;">Versionen belegen ' + _mio(_vLen) + ' von max. ' + _mio(VERSION_BUDGET)
+    + ' Mio. Zeichen · Browser-Speicher gesamt: ' + _mio(_gesamt) + ' von ca. 5,00 Mio.</div>';
   if (!versions.length) {
     el.innerHTML = '<div class="empty">Noch keine Versionen gespeichert.</div>';
     return;
   }
-  el.innerHTML = versions.map((v, i) => {
+  el.innerHTML = _info + versions.map((v, i) => {
     const dt = new Date(v.ts);
     const dateStr = dt.toLocaleDateString('de-DE', {weekday:'short', day:'2-digit', month:'long', year:'numeric'});
     const timeStr = dt.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
